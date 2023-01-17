@@ -25,6 +25,7 @@ library(sandwich)
 library(stargazer)
 library(Rcpp)
 library(leaflet)
+library(heatmaply)
 
 data <- read_csv("master.csv")
 
@@ -220,8 +221,7 @@ ui <- dashboardPage(skin = "purple",
                                        menuItem('Analysis', icon = icon("dashboard"),
                                                 menuSubItem("Worldwide", icon = icon("fas fa-chart-line"),tabName = "worldwide"),
                                                 menuSubItem("Continent", icon = icon("fas fa-chart-line"), tabName = "continent"),
-                                                menuSubItem("Country", icon = icon("fas fa-chart-line"),tabName = "country")),
-                                       menuItem('Machine Learning', tabName = 'ml', icon = icon('laptop-code'),
+                                                menuSubItem("Country", icon = icon("fas fa-chart-line"),tabName = "country"),
                                                 menuSubItem("Linear Regression", icon = icon("fas fa-chart-line"), tabName = "liReg")),
                                        menuItem('Data Overview', tabName = 'data', icon = icon('database')), 
                                        menuItem('Info', tabName = 'info', icon = icon('circle-info'))
@@ -240,8 +240,8 @@ ui <- dashboardPage(skin = "purple",
                                 HTML('<center><img src="suicidepic.png"></center>'),
                                 HTML( paste('<br/>')),
                                 tags$head(tags$style("#introduction_title{ color:#0B0B45; font-size: 25px; text-align: center;}
-                                        #introduction1{text-align: justify;font-size: 15px;}
-                                        #introduction2{text-align: justify;font-size: 15px;}"))
+                                        #introduction1{text-align: justify;font-size: 17px;}
+                                        #introduction2{text-align: justify;font-size: 17px;}"))
                         ),
                         tabItem(tabName = "maps",
                                 fluidRow(
@@ -254,8 +254,8 @@ ui <- dashboardPage(skin = "purple",
                                     valueBoxOutput(outputId = "maxrate", width = 3)
                                   )),
                                 fluidRow(
-                                  column(9, box(htmlOutput("map"), height = "auto", width = "auto")),
-                                  column(3,
+                                  column(width = 9, box(htmlOutput("map"), height = "auto", width = "auto")),
+                                  column(width = 3,
                                          radioButtons("type", label = h4("Display map by: "),
                                                       choices = list("Suicides (/100k)" = "suicide_rate",
                                                                      "Suicides" = "suicides"),
@@ -374,15 +374,15 @@ ui <- dashboardPage(skin = "purple",
                                                  plotlyOutput(outputId = "countryGDPPlot")
                                                )
                                              ),
-                                             p(" "),
-                                             p(" "),
                                              fluidRow(
                                                column(
                                                  width = 6,
+                                                 h3(" "),
                                                  highchartOutput("countryAndAgeBarPlot")
                                                ),
                                                column(
                                                  width = 6,
+                                                 h3(" "),
                                                  highchartOutput("countryAndGenderBarPlot")
                                                )
                                              )
@@ -440,7 +440,12 @@ ui <- dashboardPage(skin = "purple",
                                 textOutput("pred1intercept"),
                                 h4("P value of regression model:"),
                                 textOutput("pred1p"),
-                                h5("Note that: If p value is < 0.05, we conclude that the relationship between the independent variable and suicides value is statistically significant.")
+                                HTML( paste('<br/>')),
+                                textOutput("note"),
+                                tags$head(tags$style("#pred1slope{font-size: 17px;} 
+                                        #pred1intercept{font-size: 17px;}
+                                        #note{font-size: 15px;}
+                                        #pred1p{font-size: 17px;}"))
                                )
                               )
                             ),
@@ -448,8 +453,8 @@ ui <- dashboardPage(skin = "purple",
                               HTML( paste('<br/>')),
                               column(
                                 width=11,
-                              h5(" If we look at the relationship between total population and the total number of suicides,the regression line is upsloping, indicating suicides number increases as population increases. 
-                              However, if we look at the suicide rates, the regression line is flat which indicates increase in population does not have effect on the suicide rates."),
+                              textOutput("sentence"),
+                              tags$head(tags$style("#sentence{text-align: justify;font-size: 17px;}")),
                               HTML( paste('<br/>'))),
                               column(
                                 width=6,
@@ -514,6 +519,7 @@ server <- function(input, output){
                   that efforts can be prioritised to support and protect these individuals.  
                   ")
   })
+ 
   output$introduction2 <- renderText({
     text <- paste("Additionally, our application presents data on the relationship between different variables, providing a glimpse into potential contributing factors to 
                   suicide rates. By examining these patterns and correlations, we hope to gain a deeper understanding of the factors that influence suicide rates and inform 
@@ -1044,6 +1050,16 @@ server <- function(input, output){
   
   output$pred1intercept <- renderText(model2[[1]][1])
   
+  output$note <- renderText({
+    text <- paste("Note that: If p value is < 0.05, we conclude that the relationship between the independent 
+                  variable and suicides value is statistically significant.")
+  })
+  
+  output$sentence <- renderText({
+    text <- paste(" If we look at the relationship between total population and the total number of suicides,the regression line is upsloping, 
+    indicating suicides number increases as population increases. However, if we look at the suicide rates, the regression line is flat which 
+                  indicates increase in population does not have effect on the suicide rates.")
+  })
   
   output$lmPopRate <- renderPlot({
       ggplot(population_suicide_no_outliers, aes(x = total_population, y = suicides_per_100k)) +
@@ -1062,10 +1078,7 @@ server <- function(input, output){
            y = "total_suicides") +
       theme_light()
   })
- 
-  
-  
-  
+
   #-------------------------------Data--------------------------------------
   output$table <- renderDataTable(DT::datatable({
     data <- data
