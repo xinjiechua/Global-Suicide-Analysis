@@ -26,6 +26,7 @@ library(stargazer)
 library(Rcpp)
 library(leaflet)
 library(heatmaply)
+library(ggcorrplot)
 
 data <- read_csv("master.csv")
 
@@ -61,8 +62,6 @@ data$continent <- countrycode(sourcevar = data[, "country"],
 data <- data %>%
   select(continent, everything())
 
-#Pick up color for continent.
-continent_color <- c('#058DC7', '#50B432', '#ED561B', '#FFF263', '#6AF9C4','#FF9655')
 
 # Reclassify into North America and South America
 south_america <- c('Argentina', 'Brazil', 'Chile', 'Colombia', 'Ecuador', 'Guyana', 'Paraguay', 'Suriname', 'Uruguay')
@@ -97,8 +96,39 @@ data$generation <- factor(data$generation,
 
 data <- as_tibble(data)
 
+global_average <- (sum(as.numeric(data$suicides_no)) / sum(as.numeric(data$population)))*100000
 
-# Create a custom theme for the plots. 
+overall_tibble <- data %>%
+  select(year, suicides_no, population) %>%
+  group_by(year) %>%
+  summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
+
+avg_dt <- data %>%
+  group_by(country)%>%
+  summarise(avg_gdp = round(sum(`gdp_per_capita`)/length(`gdp_per_capita`)),
+            avg_sui = sum(`suicide_per_100k`)/length(`suicide_per_100k`)
+  )
+
+# Create a tibble with suicide per capita by country 
+country_tibble <- data %>%
+  select(country, suicides_no, population) %>%
+  group_by(country) %>%
+  summarize(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2))
+
+# Create tibble for our line plot.  
+overall_tibble <- data %>%
+  select(year, suicides_no, population) %>%
+  group_by(year) %>%
+  summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
+
+#----Color/Theme----
+#Pick color for continent.
+continent_color <- c('#058DC7', '#50B432', '#ED561B', '#FFF263', '#6AF9C4','#FF9655')
+
+#Pick color for gender.
+sex_color <- c("#F88B9D","#8ECEFD") # baby blue & pink
+
+#Create a custom theme for the plots. 
 custom_theme <- hc_theme(
   colors = c('#5CACEE', 'green', 'red'),
   chart = list(
@@ -128,35 +158,17 @@ custom_theme <- hc_theme(
   credits = list(style = list(color = "#666")),
   itemHoverStyle = list(color = 'gray'))
 
-global_average <- (sum(as.numeric(data$suicides_no)) / sum(as.numeric(data$population)))*100000
 
-overall_tibble <- data %>%
-  select(year, suicides_no, population) %>%
-  group_by(year) %>%
-  summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
-
-avg_dt <- data %>%
-  group_by(country)%>%
-  summarise(avg_gdp = round(sum(`gdp_per_capita`)/length(`gdp_per_capita`)),
-            avg_sui = sum(`suicide_per_100k`)/length(`suicide_per_100k`)
-  )
-
+#-----Create model------
+#-suicide rate vs gdp
 country_mean_gdp <- data %>%
   group_by(country, continent) %>%
   summarize(suicides_per_100k = (sum(as.numeric(suicides_no)) / sum(as.numeric(population))) * 100000, 
             gdp_per_capita = mean(gdp_per_capita))
 
-country_year_tibble <- data %>% 
-  select(country, year, suicides_no, population) %>% 
-  group_by(country, year) %>% 
-  filter(year!=2016)%>% 
-  summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
-
 model1 <- lm(suicides_per_100k ~ gdp_per_capita, data = country_mean_gdp)
 
-# Pick color for gender.
-sex_color <- c("#F88B9D","#8ECEFD") # baby blue & pink
-
+#-remove outliers
 gdp_suicide_no_outliers <- model1 %>%
   augment() %>%
   arrange(desc(.cooksd)) %>%
@@ -166,6 +178,7 @@ gdp_suicide_no_outliers <- model1 %>%
 
 model2 <- lm(suicides_per_100k ~ gdp_per_capita, data = gdp_suicide_no_outliers)
 
+#-suicide rate vs total population
 country_total_population <- data %>%
   group_by(country, continent) %>%
   filter(year!=2016)%>% 
@@ -174,6 +187,7 @@ country_total_population$suicides_per_100k <- round(country_total_population$sui
 
 model3 <- lm(suicides_per_100k ~ total_population, data = country_total_population)
 
+#-remove outliers
 population_suicide_no_outliers <- model3 %>%
   augment() %>%
   filter(total_population<5000000000)%>% 
@@ -181,7 +195,7 @@ population_suicide_no_outliers <- model3 %>%
 
 model4 <- lm(suicides_per_100k  ~ total_population, data = population_suicide_no_outliers)
 
-
+#-total suicide number vs total population
 country_pop_num <- data %>%
   group_by(country, continent) %>%
   filter(year!=2016)%>% 
@@ -189,6 +203,7 @@ country_pop_num <- data %>%
 
 model5 <- lm(total_suicides ~ total_population, data = country_pop_num)
 
+#-remove outliers
 population_suicide_outliers <- model5 %>%
   augment() %>%
   filter(total_population<5000000000)%>% 
@@ -196,22 +211,8 @@ population_suicide_outliers <- model5 %>%
 
 model6 <- lm(total_suicides  ~ total_population, data = population_suicide_outliers)
 
-### Suicides by country {.no-title .no-padding .colored }
-# Create a tibble with suicide per capita by country 
-country_tibble <- data %>%
-  select(country, suicides_no, population) %>%
-  group_by(country) %>%
-  summarize(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2))
 
-
-# Create tibble for our line plot.  
-overall_tibble <- data %>%
-  select(year, suicides_no, population) %>%
-  group_by(year) %>%
-  summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
-
-
-###----------------------------------------ui-------------------------------------------###
+###-------------------------------------------ui------------------------------------------------###
 ui <- dashboardPage(skin = "purple",
                     dashboardHeader(title = 'Global Suicide Analysis', titleWidth = 260),
                     dashboardSidebar(width = 230,
@@ -314,19 +315,19 @@ ui <- dashboardPage(skin = "purple",
                                              fluidPage(
                                                sidebarLayout(
                                                  sidebarPanel(
-                                                     sliderInput("yearGen", label = h4("Years of Interest"), min = 1985, 
-                                                                 max = 2016,
-                                                                 value = c(1985, 2016),
-                                                                 sep = ''), 
-                                                     HTML( paste('<br/>')),
-                                                     h4("The Generations Defined:"),
-                                                     p("❖ G.I. Generation: Born 1901 – 1926"),
-                                                     p("❖ Silent: Born 1928-1945"), 
-                                                     p("❖ Baby Boomers: Born 1946-1964"), 
-                                                     p("❖ Generation X: Born 1965-1980"), 
-                                                     p("❖ Millennials: Born 1981-1996"), 
-                                                     p("❖ Generation Z: Born 1997-2012"),
-                                                   ),
+                                                   sliderInput("yearGen", label = h4("Years of Interest"), min = 1985, 
+                                                               max = 2016,
+                                                               value = c(1985, 2016),
+                                                               sep = ''), 
+                                                   HTML( paste('<br/>')),
+                                                   h4("The Generations Defined:"),
+                                                   p("❖ G.I. Generation: Born 1901 – 1926"),
+                                                   p("❖ Silent: Born 1928-1945"), 
+                                                   p("❖ Baby Boomers: Born 1946-1964"), 
+                                                   p("❖ Generation X: Born 1965-1980"), 
+                                                   p("❖ Millennials: Born 1981-1996"), 
+                                                   p("❖ Generation Z: Born 1997-2012"),
+                                                 ),
                                                  mainPanel(
                                                    highchartOutput("generationplot")
                                                  )
@@ -425,46 +426,53 @@ ui <- dashboardPage(skin = "purple",
                                 )
                         ),
                         tabItem(tabName = "liReg",
-                          fluidPage(
-                            fluidRow(
-                               column(
-                                 width=8,
-                                plotOutput("lmGDP"),
-                                HTML( paste('<br/>'))
-                               ),
-                               column(
-                                 width=4,
-                                h4("Slope:"), 
-                                textOutput("pred1slope"),
-                                h4("Intercept:"),
-                                textOutput("pred1intercept"),
-                                h4("P value of regression model:"),
-                                textOutput("pred1p"),
-                                HTML( paste('<br/>')),
-                                textOutput("note"),
-                                tags$head(tags$style("#pred1slope{font-size: 17px;} 
+                                fluidPage(
+                                  fluidRow(
+                                    column(
+                                      width=8,
+                                      plotOutput("lmGDP"),
+                                      HTML( paste('<br/>'))
+                                    ),
+                                    column(
+                                      width=4,
+                                      h4("Slope:"), 
+                                      textOutput("pred1slope"),
+                                      h4("Intercept:"),
+                                      textOutput("pred1intercept"),
+                                      h4("P value of regression model:"),
+                                      textOutput("pred1p"),
+                                      HTML( paste('<br/>')),
+                                      textOutput("note"),
+                                      tags$head(tags$style("#pred1slope{font-size: 17px;} 
                                         #pred1intercept{font-size: 17px;}
                                         #note{font-size: 15px;}
                                         #pred1p{font-size: 17px;}"))
-                               )
-                              )
-                            ),
-                            fluidRow(
-                              HTML( paste('<br/>')),
-                              column(
-                                width=11,
-                              textOutput("sentence"),
-                              tags$head(tags$style("#sentence{text-align: justify;font-size: 17px;}")),
-                              HTML( paste('<br/>'))),
-                              column(
-                                width=6,
-                                plotOutput("lmPopTotal")
-                              ),
-                              column(
-                                width=6,
-                                plotOutput("lmPopRate")
-                              )
-                            )
+                                    )
+                                  )
+                                ),
+                                fluidRow(
+                                  HTML( paste('<br/>')),
+                                  column(
+                                    width=11,
+                                    textOutput("sentence"),
+                                    tags$head(tags$style("#sentence{text-align: justify;font-size: 17px;}")),
+                                    HTML( paste('<br/>'))),
+                                  column(
+                                    width=6,
+                                    plotOutput("lmPopTotal")
+                                  ),
+                                  column(
+                                    width=6,
+                                    plotOutput("lmPopRate")
+                                  )
+                                ),
+                                fluidRow(
+                                  column(
+                                    width=8,
+                                    HTML( paste('<br/>')),
+                                    h4("   Correlation Heatmap"),
+                                    plotOutput("corrplot"))
+                                )
                         ),
                         tabItem(tabName = 'data',
                                 fluidPage(
@@ -487,7 +495,7 @@ ui <- dashboardPage(skin = "purple",
                                                        'Age',
                                                        c('All', "5-14", "15-24", "25-34",
                                                          "35-54", "55-74","75+")
-                                                       ))
+                                           ))
                                   ),
                                   fluidRow(
                                     DT::dataTableOutput('table')
@@ -503,10 +511,10 @@ ui <- dashboardPage(skin = "purple",
                       )
                     )  
 )
-#---------------------------------------------------------------------------
+###----------------------------------------Server------------------------------------------------###
 server <- function(input, output){
   
-  #------------Home-----------------------------------------------------
+  ##-------------------------Home-------------------------------
   output$introduction_title <- renderText({
     intro <- paste0("An Introduction to Our Findings, Our Purpose, and Our Goal")
   })
@@ -519,7 +527,7 @@ server <- function(input, output){
                   that efforts can be prioritised to support and protect these individuals.  
                   ")
   })
- 
+  
   output$introduction2 <- renderText({
     text <- paste("Additionally, our application presents data on the relationship between different variables, providing a glimpse into potential contributing factors to 
                   suicide rates. By examining these patterns and correlations, we hope to gain a deeper understanding of the factors that influence suicide rates and inform 
@@ -529,7 +537,7 @@ server <- function(input, output){
                   in reducing the suicide rate. We believe that with better understanding and knowledge, we can work towards a future where fewer lives lost to suicide.")
   })
   
-  #-----------Map-----------------------------------------------------
+  ##----------------------------Map-----------------------------------
   df1 <- reactive({
     if(is.null(input$checkGroup)){
       df1 = data %>% 
@@ -548,7 +556,6 @@ server <- function(input, output){
     }
   })
   
-  ## Render Map
   output$map <-renderGvis({
     gvisGeoChart(data = df1(), locationvar = "country", colorvar = input$type,
                  options = list(region="world", displayMode="auto",
@@ -621,7 +628,7 @@ server <- function(input, output){
   
   ##-------------------------------Worldwide------------------------------------##
   
-  ##-----------------------worldwide trend -----------------------------
+  ##-----------------------worldwide trend-----------------------------
   
   output$worldwidetrend <- renderHighchart({
     highchart() %>% 
@@ -643,13 +650,11 @@ server <- function(input, output){
       hc_add_theme(custom_theme)  
   })
   
-  ##---------------------Worldwide by Gender --------------------------------
+  ##---------------------Worldwide by Gender-----------------------------
   
   ##Gender Pie Chart
-  
   output$genderPiePlot <- renderHighchart({
-    # First, create a tibble of suicide by Age. We will use this for our pie chart.
-    # Create pie chart for sex. 
+    
     pie_sex <- data %>% 
       group_by(sex) %>%
       summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2))
@@ -665,8 +670,7 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
-  
-  ###gender line
+  ##Gender line chart
   output$genderlineplot <- renderHighchart({
     
     sex_line <- data %>% 
@@ -687,12 +691,11 @@ server <- function(input, output){
   })
   
   
-  
   ##--------------------Worldwide by Age----------------------------------- 
   
   ## Age Pie Chart
   output$agePiePlot <- renderHighchart({
-    # Pick color for age. 
+    
     age_color <- rev(plasma(6))
     
     pie_age <- data %>%
@@ -713,7 +716,7 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
-  #Worldwide by age - boxplot
+  ##Worldwide by age boxplot
   age_tibble <- data %>%
     select(year, age, suicides_no, population) %>%
     group_by(year, age) %>%
@@ -727,7 +730,7 @@ server <- function(input, output){
       yaxis = list(title = 'Suicide per 100K Population'))
   })
   
-  #Worldwide by generation
+  ##Worldwide by generation
   output$generationplot <- renderHighchart({
     
     genline <- data %>% 
@@ -751,11 +754,9 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
+  ##--------------------------------- Continent --------------------------------------------##
   
-  
-  #--------------------------------- Continent --------------------------------------------##
-  
-  #Continent Bar plot
+  ##Continent Bar plot
   output$continentBarPlot <- renderHighchart({
     continent_tibble <- data %>%
       select(continent, sex, suicides_no, population) %>%
@@ -777,15 +778,13 @@ server <- function(input, output){
                       label = list(text = "Mean = 13.12", style = list(color = "black", fontSize = 6))))) %>%     
       hc_legend(verticalAlign = 'top', enabled = FALSE) %>% 
       hc_add_theme(custom_theme)
-    
   })
   
-  #Continent map plot
+  ##Continent map plot
   output$continentMapPlot <- renderHighchart({
     
     map_data <- download_map_data("custom/world-continents")
     
-    # Create a tibble for continent.
     continent_tibble <- data %>%
       select(continent, suicides_no, population) %>%
       group_by(continent) %>%
@@ -805,7 +804,7 @@ server <- function(input, output){
     
   })
   
-  # Continent and sex
+  ##Continent and sex
   output$continentAndGenderBarPlot <- renderHighchart({
     continent_sex_tibble <- data %>%
       select(continent, sex, suicides_no, population) %>%
@@ -830,10 +829,9 @@ server <- function(input, output){
       hc_add_theme(custom_theme) 
   })
   
-  # Create a tibble for continent and age.
+  ##Create a tibble for continent and age.
   output$continentAndAgeBarPlot <- renderHighchart({
     
-    # Pick color for age. 
     age_color <- rev(plasma(6))
     
     continent_age_tibble <- data %>%
@@ -841,7 +839,7 @@ server <- function(input, output){
       group_by(continent, age) %>%
       summarize(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2))
     
-    # Create histogram of suicides by continent and age.
+    #Create histogram of suicides by continent and age.
     highchart() %>%
       hc_add_series(continent_age_tibble, hcaes(x = continent, y = suicide_capita, group = age), type = "column")  %>% 
       hc_colors(colors = age_color) %>%
@@ -862,9 +860,9 @@ server <- function(input, output){
   
   ##---------------------------------------Country---------------------------------------##
   
-  ##Overview
+  ##--------------------Overview-----------------------------------
   
-  # Country suicide rate
+  ##Country suicide rate
   output$countryBarPlot <- renderHighchart({
     country_bar <- data %>%
       select(country, suicides_no, population) %>%
@@ -872,7 +870,7 @@ server <- function(input, output){
       summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) %>%
       arrange(desc(suicide_capita))
     
-    # Create interactive bar plot.
+    ##Bar plot.
     highchart() %>%
       hc_add_series(country_bar, hcaes(x = country, y = suicide_capita, color = suicide_capita), type = "bar")  %>% 
       hc_tooltip(borderWidth = 1.5, 
@@ -890,7 +888,7 @@ server <- function(input, output){
       hc_add_theme(custom_theme) 
   })
   
-  #Country and gdp
+  ##Country and gdp
   output$countryGDPPlot  <- renderPlotly({
     plot_ly(data = avg_dt, y = ~avg_sui, x= ~avg_gdp, color= ~country,size = ~avg_sui, type = 'scatter', mode = 'markers') %>%
       layout(title = "Suicides vs GDP Per Capita",
@@ -899,9 +897,9 @@ server <- function(input, output){
       )
   }) 
   
-  # Country and sex.
+  ##Country and sex
   output$countryAndGenderBarPlot <- renderHighchart({
-    # Create tibble for suicide by countries and sex. 
+    
     country_bar_sex <- data %>%
       select(country, sex, suicides_no, population) %>%
       group_by(country, sex) %>%
@@ -912,7 +910,7 @@ server <- function(input, output){
       group_by(country) %>%
       summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2)) 
     
-    # Create interactive bar plot.
+    ##bar plot
     highchart() %>%
       hc_add_series(country_bar_sex, hcaes(x = country, y = suicide_capita, group = sex), type = "bar", color = sex_color)  %>% 
       hc_tooltip(borderWidth = 1.5, pointFormat = paste("Gender: <b>{point.sex} ({point.percentage:.1f}%)</b> <br> Suicides per 100K: <b>{point.y}</b>")) %>%
@@ -929,18 +927,16 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
-  #Country and Age.
+  ##Country and Age.
   output$countryAndAgeBarPlot <- renderHighchart({
-    # Pick color for age. 
+    
     age_color <- rev(plasma(6))
     
-    # Create tibble for suicide by countries and age.
     country_bar_age <- data %>%
       select(country, age, suicides_no, population) %>%
       group_by(country, age) %>%
       summarise(suicide_capita = round((sum(suicides_no)/sum(population))*100000, 2))
     
-    # Create interactive bar plot.
     highchart() %>%
       hc_add_series(country_bar_age, hcaes(x = country, y = suicide_capita, group = age), type = "bar", color = age_color)  %>% 
       hc_tooltip(borderWidth = 1.5, pointFormat = paste("Age: <b>{point.age} ({point.percentage:.1f}%)</b> <br> Suicides per 100K: <b>{point.y}</b>")) %>%
@@ -957,9 +953,9 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
-  ##Trend
+  ##----------------------------Trend-----------------------------------
   
-  #By year
+  ##By year
   country_year<-reactive({
     data %>% 
       filter(input$var1 == country) %>% 
@@ -970,7 +966,6 @@ server <- function(input, output){
   })
   
   output$countrytrend <- renderHighchart({
-    
     highchart() %>%  
       hc_add_series(country_year(), hcaes(x = year, y = suicide_per_100k, color = suicide_per_100k), type = "line") %>%
       hc_colors(c("#95a2f0"))%>%  
@@ -986,8 +981,7 @@ server <- function(input, output){
       hc_add_theme(custom_theme)
   })
   
-  
-  #A country gdp year
+  ##country gdp year
   output$GDPyear <- renderHighchart({
     highchart() %>%  
       hc_add_series(country_year(),hcaes(x = year, y = gdp_capita, color = gdp_capita), type = "line") %>%
@@ -1007,7 +1001,6 @@ server <- function(input, output){
   output$bar_title <- renderText({
     explanation <- paste0("Which is the most vulnerable age group in ", input$oneyear, " in ", input$var1, "?")
   })
-  
   
   output$ageSexPlot <- renderHighchart({
     ageSexTibble<- data %>% filter(input$oneyear == year, input$var1 == country)
@@ -1029,22 +1022,20 @@ server <- function(input, output){
     
   })
   
-  
-  
-  ##----------------------------------Linear regression------------------------------
+  ##----------------------------------Linear regression---------------------------------##
   output$lmGDP <- renderPlot({
-      ggplot(gdp_suicide_no_outliers, aes(x = gdp_per_capita, y = suicides_per_100k, col = continent)) + 
-        geom_point() + 
-        geom_smooth(method = "lm", aes(group = 1),linewidth=1.25, alpha = 0.2) + 
-        scale_x_continuous(labels=scales::dollar_format(prefix="$"), breaks = seq(0, 70000, 10000)) + 
-        labs(title = "Relationship between GDP per Capita and Suicides per 100k", 
-             
-             x = "GDP (per capita)", 
-             y = "Suicides_no per 100k", 
-             col = "Continent") + 
-        theme_light()})
+    ggplot(gdp_suicide_no_outliers, aes(x = gdp_per_capita, y = suicides_per_100k, col = continent)) + 
+      geom_point() + 
+      geom_smooth(method = "lm", aes(group = 1),linewidth=1.25, alpha = 0.2) + 
+      scale_x_continuous(labels=scales::dollar_format(prefix="$"), breaks = seq(0, 70000, 10000)) + 
+      labs(title = "Relationship between GDP per Capita and Suicides per 100k", 
+           
+           x = "GDP (per capita)", 
+           y = "Suicides_no per 100k", 
+           col = "Continent") + 
+      theme_light()})
   
-   output$pred1p <- renderText(anova(model2)$'Pr(>F)'[1])
+  output$pred1p <- renderText(anova(model2)$'Pr(>F)'[1])
   
   output$pred1slope <- renderText(model2[[1]][2])
   
@@ -1062,13 +1053,13 @@ server <- function(input, output){
   })
   
   output$lmPopRate <- renderPlot({
-      ggplot(population_suicide_no_outliers, aes(x = total_population, y = suicides_per_100k)) +
-        geom_point() +
-        geom_smooth(method = 'lm', aes(group = 1)) +
-        labs(title = 'Suicides Rate vs Total Population', x = "total_population", 
-             y = "suicides_per_100k") +
-        theme_light()
-    })
+    ggplot(population_suicide_no_outliers, aes(x = total_population, y = suicides_per_100k)) +
+      geom_point() +
+      geom_smooth(method = 'lm', aes(group = 1)) +
+      labs(title = 'Suicides Rate vs Total Population', x = "total_population", 
+           y = "suicides_per_100k") +
+      theme_light()
+  })
   
   output$lmPopTotal <- renderPlot({
     ggplot(population_suicide_outliers, aes(x = total_population, y = total_suicides)) +
@@ -1078,8 +1069,22 @@ server <- function(input, output){
            y = "total_suicides") +
       theme_light()
   })
-
-  #-------------------------------Data--------------------------------------
+  
+  ##correlation
+  c2 <- data  %>% select(-c('continent','country','gdp_for_year')) 
+  cols = c("year","sex","age","generation")
+  c2[, cols] <- c2 %>% select(all_of(cols)) %>% lapply(as.numeric)
+  
+  cor2 <- cor(c2)
+  
+  corr <- round(cor(c2, use="complete.obs"), 2)
+  output$corrplot <- renderPlot({
+    ggcorrplot(corr, lab = TRUE, colors = c("lightcoral", "white", "dodgerblue"), 
+               show.legend = T, outline.color = "gray", type = "upper", hc.order = TRUE,
+               tl.cex = 15, lab_size = 5, sig.level = .2) +labs(fill = "Correlation")
+  })
+  
+  ##-----------------------------------Data---------------------------------------------##
   output$table <- renderDataTable(DT::datatable({
     data <- data
     if (input$country != "All") {
