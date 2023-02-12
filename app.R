@@ -163,6 +163,7 @@ custom_theme <- hc_theme(
 #-suicide rate vs gdp
 country_mean_gdp <- data %>%
   group_by(country, continent) %>%
+  filter(year != 2016)  %>%
   summarize(suicides_per_100k = (sum(as.numeric(suicides_no)) / sum(as.numeric(population))) * 100000, 
             gdp_per_capita = mean(gdp_per_capita))
 
@@ -459,16 +460,18 @@ ui <- dashboardPage(skin = "purple",
                                     HTML( paste('<br/>'))),
                                   column(
                                     width=6,
-                                    plotOutput("lmPopTotal")
+                                    plotOutput("lmPopTotal"),
+                                    h5("p-value: < 2.2e-16")
                                   ),
                                   column(
                                     width=6,
-                                    plotOutput("lmPopRate")
+                                    plotOutput("lmPopRate"),
+                                    h5("p-value: 0.2758")
                                   )
                                 ),
                                 fluidRow(
                                   column(
-                                    width=8,
+                                    width=6,
                                     HTML( paste('<br/>')),
                                     h4("   Correlation Heatmap"),
                                     plotOutput("corrplot"))
